@@ -1,6 +1,7 @@
+import uuid
 from django.contrib.auth.models import PermissionsMixin
 from django.contrib.auth.base_user import AbstractBaseUser
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -9,10 +10,12 @@ class MyUserManager(models.Manager):
     def _create_user(self, email, password, **extra_fields):
         if not email:
             raise ValueError('The email must be set')
-        user = self.model(email=email, **extra_fields)
-        user.set_password(password)
-        user.save()
-        return user
+        with transaction.atomic():
+            user = self.model(email=email, **extra_fields)
+            user.set_password(password)
+            user.generate_activation_code()
+            user.save()
+            return user
 
     def create_user(self, email, password, **extra_fields):
         extra_fields.setdefault('is_staff', False)
@@ -41,11 +44,16 @@ class MyUser(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateField(default=timezone.now)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=False)
+    activation_code = models.CharField(max_length=36, blank=True)
 
     USERNAME_FIELD = 'email'
 
-    objects = MyUserManager()
+    object = MyUserManager()
+
+    def generate_activation_code(self):
+        code = str(uuid.uuid4())
+        self.activation_code = code
 
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}"
